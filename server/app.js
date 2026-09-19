@@ -22,7 +22,7 @@ function getAssignments(body) {
 
 function assertExpectedRevision(state, expectedRevision) {
   if (!Number.isInteger(expectedRevision)) {
-    throw new GameRuleError('提交游戏进度时必须提供整数 expectedRevision。');
+    throw new GameRuleError('请求必须提供整数 expectedRevision。');
   }
   if (state.revision !== expectedRevision) {
     throw new GameRuleError('游戏进度已在其他请求中更新，请刷新后再提交。', [], 409);
@@ -53,6 +53,7 @@ export function createApp({ store, clientDist }) {
   app.post('/api/game/plan/preview', (request, response) => {
     const state = store.getState();
     assertPlanningPhase(state);
+    assertExpectedRevision(state, request.body?.expectedRevision);
     response.json({ preview: previewPlan(state, getAssignments(request.body)) });
   });
 

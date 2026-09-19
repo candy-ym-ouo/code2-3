@@ -45,10 +45,28 @@ test('HTTP API 完成读取、预览、结算和重置闭环', async (context) =
 
   const previewResponse = await request('/api/game/plan/preview', {
     method: 'POST',
-    body: JSON.stringify({ assignments: [assignment] })
+    body: JSON.stringify({ assignments: [assignment], expectedRevision: game.revision })
   });
   assert.equal(previewResponse.status, 200);
   assert.equal(previewResponse.body.preview.valid, true);
+
+  const invalidAssignments = await request('/api/game/plan/preview', {
+    method: 'POST',
+    body: JSON.stringify({ assignments: '', expectedRevision: game.revision })
+  });
+  assert.equal(invalidAssignments.status, 400);
+
+  const missingAssignments = await request('/api/game/plan/preview', {
+    method: 'POST',
+    body: JSON.stringify({ expectedRevision: game.revision })
+  });
+  assert.equal(missingAssignments.status, 400);
+
+  const missingRevision = await request('/api/game/plan/preview', {
+    method: 'POST',
+    body: JSON.stringify({ assignments: [assignment] })
+  });
+  assert.equal(missingRevision.status, 400);
 
   const advanceBody = JSON.stringify({ assignments: [assignment], expectedRevision: game.revision });
   const advanceResponse = await request('/api/game/day/advance', {
@@ -68,17 +86,12 @@ test('HTTP API 完成读取、预览、结算和重置闭环', async (context) =
   const stateAfterDuplicate = await request('/api/game');
   assert.equal(stateAfterDuplicate.body.state.day, 2);
 
-  const invalidAssignments = await request('/api/game/plan/preview', {
+  const stalePreview = await request('/api/game/plan/preview', {
     method: 'POST',
-    body: JSON.stringify({ assignments: '' })
+    body: JSON.stringify({ assignments: [assignment], expectedRevision: game.revision })
   });
-  assert.equal(invalidAssignments.status, 400);
-
-  const missingAssignments = await request('/api/game/plan/preview', {
-    method: 'POST',
-    body: JSON.stringify({})
-  });
-  assert.equal(missingAssignments.status, 400);
+  assert.equal(stalePreview.status, 409);
+  assert.equal(stalePreview.body.error, '游戏进度已在其他请求中更新，请刷新后再提交。');
 
   const resetResponse = await request('/api/game/reset', {
     method: 'POST',

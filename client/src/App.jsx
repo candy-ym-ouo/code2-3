@@ -36,6 +36,7 @@ function App() {
     ? `${game.seed}:${game.revision ?? game.day}:${assignmentsKey}`
     : null;
   const preview = previewState?.key === previewKey ? previewState.data : null;
+  const previewError = previewState?.key === previewKey ? previewState.error : null;
 
   useEffect(() => {
     if (!game || game.phase !== 'planning' || !previewKey) {
@@ -44,25 +45,49 @@ function App() {
     }
 
     let active = true;
+    const controller = new AbortController();
     const requestId = previewRequest.current + 1;
     previewRequest.current = requestId;
     const timer = window.setTimeout(() => {
-      gameApi.preview(assignments)
+      gameApi.preview(assignments, {
+        expectedRevision: game.revision ?? 0,
+        signal: controller.signal
+      })
         .then(({ preview: nextPreview }) => {
+          // 版本校验：只有最新一次请求允许写入，迟到的旧响应直接丢弃。
           if (active && previewRequest.current === requestId) {
-            setPreviewState({ key: previewKey, data: nextPreview });
+            setPreviewState({ key: previewKey, data: nextPreview, error: null });
           }
         })
         .catch((requestError) => {
           if (!active || previewRequest.current !== requestId) return;
-          setPreviewState({ key: previewKey, data: null });
-          setError(requestError.message);
+          if (requestError.name === 'AbortError') return;
+          if (requestError.status === 409) {
+            // 服务端进度已变化：重新同步并清空本地方案，避免旧方案渲染到新状态上。
+            setError(requestError.message);
+            gameApi.getState()
+              .then(({ state }) => {
+                if (!active || previewRequest.current !== requestId) return;
+                setGame(state);
+                setAssignments([]);
+                setPreviewState(null);
+              })
+              .catch(() => {
+                if (active && previewRequest.current === requestId) {
+                  setPreviewState({ key: previewKey, data: null, error: requestError.message });
+                }
+              });
+            return;
+          }
+          // 错误与方案版本绑定，后续改动会自动隐藏它，不会闪回历史状态。
+          setPreviewState({ key: previewKey, data: null, error: requestError.message });
         });
     }, 120);
 
     return () => {
       active = false;
       window.clearTimeout(timer);
+      controller.abort();
     };
   }, [assignments, game, previewKey]);
 
@@ -125,6 +150,11 @@ function App() {
         return assignment;
       });
     });
+  }
+
+  function dismissError() {
+    setError('');
+    setPreviewState((current) => (current ? { ...current, error: null } : current));
   }
 
   async function advanceDay() {
@@ -231,10 +261,10 @@ function App() {
         <button type="button" className="reset-button" onClick={resetGame} disabled={busy}>重新开局</button>
       </header>
 
-      {error && (
+      {(error || previewError) && (
         <div className="global-error" role="alert">
-          <span>{error}</span>
-          <button type="button" onClick={() => setError('')}>关闭</button>
+          <span>{error || previewError}</span>
+          <button type="button" onClick={dismissError}>关闭</button>
         </div>
       )}
 

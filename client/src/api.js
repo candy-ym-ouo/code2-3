@@ -16,9 +16,10 @@ async function request(path, options = {}) {
 
 export const gameApi = {
   getState: () => request('/api/game'),
-  preview: (assignments) => request('/api/game/plan/preview', {
+  preview: (assignments, { expectedRevision, signal } = {}) => request('/api/game/plan/preview', {
     method: 'POST',
-    body: JSON.stringify({ assignments })
+    body: JSON.stringify({ assignments, expectedRevision }),
+    signal
   }),
   advance: (assignments, expectedRevision) => request('/api/game/day/advance', {
     method: 'POST',
