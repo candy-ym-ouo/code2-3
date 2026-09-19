@@ -72,6 +72,32 @@ code {
   padding-bottom: 118px;
 }
 
+.app-shell.has-preview-error {
+  padding-bottom: 164px;
+}
+
+.preview-error {
+  position: fixed;
+  z-index: 24;
+  right: 0;
+  bottom: 90px;
+  left: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px clamp(18px, 3vw, 46px);
+  color: #ffd1d1;
+  border-top: 1px solid rgba(255, 123, 123, 0.3);
+  background: rgba(93, 20, 31, 0.92);
+  backdrop-filter: blur(20px);
+  font-size: 12px;
+}
+
+.preview-error small {
+  color: rgba(255, 209, 209, 0.72);
+}
+
 .topbar {
   position: sticky;
   top: 0;
@@ -1485,6 +1511,17 @@ code {
 @media (max-width: 760px) {
   .app-shell {
     padding-bottom: 192px;
+  }
+
+  .app-shell.has-preview-error {
+    padding-bottom: 262px;
+  }
+
+  .preview-error {
+    flex-direction: column;
+    gap: 2px;
+    bottom: 152px;
+    padding: 8px 14px;
   }
 
   .topbar {

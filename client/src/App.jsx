@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { gameApi } from './api.js';
+import { gameApi, isAbortError } from './api.js';
 import FleetPanel from './components/FleetPanel.jsx';
 import LetterCard from './components/LetterCard.jsx';
 import MapPanel from './components/MapPanel.jsx';
@@ -15,6 +15,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [previewError, setPreviewError] = useState('');
   const previewRequest = useRef(0);
 
   useEffect(() => {
@@ -40,29 +41,51 @@ function App() {
   useEffect(() => {
     if (!game || game.phase !== 'planning' || !previewKey) {
       setPreviewState(null);
+      setPreviewError('');
+      previewRequest.current = 0;
       return undefined;
     }
 
     let active = true;
+    const controller = new AbortController();
     const requestId = previewRequest.current + 1;
     previewRequest.current = requestId;
+    const expectedRevision = game.revision ?? 0;
+    setPreviewError('');
+
     const timer = window.setTimeout(() => {
-      gameApi.preview(assignments)
-        .then(({ preview: nextPreview }) => {
-          if (active && previewRequest.current === requestId) {
-            setPreviewState({ key: previewKey, data: nextPreview });
-          }
-        })
-        .catch((requestError) => {
+      gameApi.preview(assignments, expectedRevision, controller.signal)
+        .then(({ revision, preview: nextPreview }) => {
+          // 旧响应迟到：请求序号或服务端版本号对不上时一律丢弃，不回写任何界面状态。
           if (!active || previewRequest.current !== requestId) return;
+          if (revision !== expectedRevision) return;
+          setPreviewState({ key: previewKey, data: nextPreview });
+          setPreviewError('');
+        })
+        .catch(async (requestError) => {
+          if (isAbortError(requestError) || !active || previewRequest.current !== requestId) return;
+          if (requestError.status === 409) {
+            // 版本落后：静默重新同步，方案与预览全部作废，避免呈现历史结果。
+            try {
+              const { state } = await gameApi.getState();
+              if (!active || previewRequest.current !== requestId) return;
+              setGame(state);
+              setAssignments([]);
+              setPreviewState(null);
+            } catch {
+              // 保留当前界面，等待下一次编辑或刷新重新同步。
+            }
+            return;
+          }
           setPreviewState({ key: previewKey, data: null });
-          setError(requestError.message);
+          setPreviewError(requestError.message);
         });
     }, 120);
 
     return () => {
       active = false;
       window.clearTimeout(timer);
+      controller.abort();
     };
   }, [assignments, game, previewKey]);
 
@@ -137,6 +160,7 @@ function App() {
       setReport(result.report);
       setAssignments([]);
       setPreviewState(null);
+      setPreviewError('');
     } catch (requestError) {
       if (requestError.status === 409) {
         try {
@@ -144,6 +168,7 @@ function App() {
           setGame(state);
           setAssignments([]);
           setPreviewState(null);
+          setPreviewError('');
         } catch {
           // 保留原始冲突提示；下一次操作或刷新会重新同步。
         }
@@ -163,6 +188,7 @@ function App() {
       setGame(state);
       setAssignments([]);
       setPreviewState(null);
+      setPreviewError('');
       setReport(null);
     } catch (requestError) {
       setError(requestError.message);
@@ -195,7 +221,7 @@ function App() {
   const deliveredCount = assignments.length;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${previewError ? ' has-preview-error' : ''}`}>
       <header className="topbar">
         <div className="brand">
           <div className="brand-emblem">✦</div>
@@ -291,6 +317,13 @@ function App() {
           />
         </div>
       </main>
+
+      {previewError && (
+        <div className="preview-error" role="alert">
+          <span>航线预览失效：{previewError}</span>
+          <small>已保留当前编辑，可稍候重试或重新连接。</small>
+        </div>
+      )}
 
       <aside className="dispatch-dock">
         <div className="dock-projection">

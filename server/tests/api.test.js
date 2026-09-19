@@ -45,10 +45,11 @@ test('HTTP API 完成读取、预览、结算和重置闭环', async (context) =
 
   const previewResponse = await request('/api/game/plan/preview', {
     method: 'POST',
-    body: JSON.stringify({ assignments: [assignment] })
+    body: JSON.stringify({ assignments: [assignment], expectedRevision: game.revision })
   });
   assert.equal(previewResponse.status, 200);
   assert.equal(previewResponse.body.preview.valid, true);
+  assert.equal(previewResponse.body.revision, game.revision);
 
   const advanceBody = JSON.stringify({ assignments: [assignment], expectedRevision: game.revision });
   const advanceResponse = await request('/api/game/day/advance', {
@@ -73,6 +74,19 @@ test('HTTP API 完成读取、预览、结算和重置闭环', async (context) =
     body: JSON.stringify({ assignments: '' })
   });
   assert.equal(invalidAssignments.status, 400);
+
+  const previewWithoutRevision = await request('/api/game/plan/preview', {
+    method: 'POST',
+    body: JSON.stringify({ assignments: [] })
+  });
+  assert.equal(previewWithoutRevision.status, 400);
+
+  const freshGame = (await request('/api/game')).body.state;
+  const stalePreview = await request('/api/game/plan/preview', {
+    method: 'POST',
+    body: JSON.stringify({ assignments: [], expectedRevision: freshGame.revision + 99 })
+  });
+  assert.equal(stalePreview.status, 409);
 
   const missingAssignments = await request('/api/game/plan/preview', {
     method: 'POST',
